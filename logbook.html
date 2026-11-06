@@ -150,7 +150,8 @@ function fmt(iso){ if(!iso) return '–'; const [y,m,d]=iso.split('-'); return d
 function toast(t){ const e=$('toast'); e.textContent=t; e.style.display='block'; clearTimeout(e._t); e._t=setTimeout(()=>e.style.display='none',3200); }
 function uid(){ return 'L'+Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
 const RULE=()=>{ const o={}; DB.rules.forEach(r=>o[r.code]=r); return o; };
-const SETTINGS={Aviation:['Aircraft','Static rig / simulator'],Clinical:['Real patient','Simulation'],Mixed:['Aircraft','Real patient','Simulation / static']};
+const SETTINGS={Aviation:['Aircraft','Static rig / simulator'],Clinical:['Real patient','Simulation'],Mixed:['Aircraft','Real patient','Simulation / static'],RAAC:['Training','Operational','Assessment']};
+const SETTINGS_OTHER=['Training','Operational','Assessment'];
 
 // ═══ API ══════════════════════════════════════════════════════════
 async function apiGet(p){ const r=await fetch(SCRIPT_URL+'?'+new URLSearchParams({...p,t:Date.now()})); return r.json(); }
@@ -247,7 +248,7 @@ function stLabel(i){ return i.st==='grace'?'In grace — '+i.graceLeft+'d left':
 // currencies offered = those the Requirements tab lists for this clinician's group
 function myList(){
   if(!DB.me) return [];
-  const req=new Set(DB.me.it.filter(a=>a[4]).map(a=>a[0]));
+  const req=new Set(DB.me.it.filter(a=>a[4]||a[7]).map(a=>a[0]));   // required (Y) or optional (O) for their group
   return DB.rules.filter(r=>r.loggable&&req.has(r.code));
 }
 function ruleHint(r){
@@ -259,11 +260,12 @@ function renderLog(){
   const L=myList();
   if(!L.length){ $('v-log').innerHTML='<div class="card empty">Loading your currencies… (needs signal the first time)</div>'; return; }
   const R=RULE(), r=FORM.code?R[FORM.code]:null;
-  const cat=r?r.category:'Aviation', sets=SETTINGS[cat]||SETTINGS.Mixed;
+  const cat=r?r.category:'Aviation', sets=SETTINGS[cat]||SETTINGS_OTHER;
   if(!sets.includes(FORM.setting)) FORM.setting='';
   const needExp=r&&!r.once&&!r.interval;
   const ready=FORM.code&&FORM.date&&FORM.sup.trim()&&(!needExp||(FORM.expiry&&FORM.expiry>FORM.date));
-  const groups=['Aviation','Mixed','Clinical'].map(c=>{ const g=L.filter(x=>x.category===c); if(!g.length) return '';
+  const pref=['Aviation','Mixed','Clinical'], present=[...new Set(L.map(x=>x.category))];
+  const groups=pref.filter(c=>present.includes(c)).concat(present.filter(c=>!pref.includes(c))).map(c=>{ const g=L.filter(x=>x.category===c); if(!g.length) return '';
     return `<optgroup label="${c}">${g.map(x=>{ const i=itemFor(x.code); return `<option value="${x.code}" ${FORM.code===x.code?'selected':''}>${esc(x.currency)} — ${esc(stLabel(i))}</option>`; }).join('')}</optgroup>`; }).join('');
   const cur=r?itemFor(r.code):null;
   $('v-log').innerHTML=`<div class="card">

@@ -95,7 +95,7 @@ tr.click:hover td{background:#F7F9FD}
 .p-cur{background:var(--cur-bg);color:var(--cur)}.p-due{background:var(--due-bg);color:var(--due)}
 .p-exp{background:var(--exp-bg);color:var(--exp)}.p-none{background:var(--none-bg);color:var(--none)}.p-lc{background:var(--lc-bg);color:var(--lc)}.p-grace{background:var(--gr-bg);color:var(--gr)}
 .cat{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:5px;background:var(--navy-l);color:var(--navy)}
-.cat.Clinical{background:#FDE8E7;color:#A3231E}.cat.Mixed{background:#FEF6D8;color:#8A6A00}
+.cat.Clinical{background:#FDE8E7;color:#A3231E}.cat.Mixed{background:#FEF6D8;color:#8A6A00}.cat.RAAC{background:#E6F4F1;color:#0F6E5C}
 
 /* matrix */
 .mx-wrap{overflow:auto;max-height:calc(100vh - 230px);border:1px solid var(--rule);border-radius:10px;background:#fff}
@@ -103,7 +103,7 @@ tr.click:hover td{background:#F7F9FD}
 .mx th,.mx td{padding:0;border-bottom:1px solid #EEF0F4;border-right:1px solid #EEF0F4}
 .mx thead th{position:sticky;top:0;background:#FAFBFD;z-index:3;height:170px;vertical-align:bottom;text-transform:none;letter-spacing:0}
 .mx thead th .vh{writing-mode:vertical-rl;transform:rotate(180deg);white-space:nowrap;padding:8px 0;margin:0 auto;font-size:11px;font-weight:600;color:var(--ink2);max-height:160px;overflow:hidden;text-overflow:ellipsis}
-.mx thead th.cat-Clinical .vh{color:#A3231E}.mx thead th.cat-Mixed .vh{color:#8A6A00}
+.mx thead th.cat-Clinical .vh{color:#A3231E}.mx thead th.cat-Mixed .vh{color:#8A6A00}.mx thead th.cat-RAAC .vh{color:#0F6E5C}
 .mx .nmh,.mx .nmc{position:sticky;left:0;background:#fff;z-index:2;min-width:190px;max-width:190px;padding:6px 10px;text-align:left}
 .mx thead .nmh{z-index:4;background:#FAFBFD;vertical-align:bottom;padding-bottom:10px}
 .mx .nmc{cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -233,6 +233,8 @@ function firstLast(n){ const p=String(n).split(','); return p.length>1?(p[1].tri
 const ST_LABEL = {cur:'Current',due:'Due soon',grace:'In grace',exp:'Expired',none:'No record',lc:'Completed'};
 // grace = N days after expiry, or a drop-dead date set for the training year
 function graceEndOf(exp,r){ if(!exp||!r) return ''; if(r.graceDate) return r.graceDate>exp?r.graceDate:''; return +r.grace>0?addDays(exp,+r.grace):''; }
+// categories come from the Rules tab: known ones first, then any new ones (e.g. RAAC)
+function CATS(){ const pref=['Aviation','Mixed','Clinical']; const all=[...new Set(RULES.map(r=>r.category))]; return pref.filter(c=>all.includes(c)).concat(all.filter(c=>!pref.includes(c))); }
 function addDays(iso,n){ const d=new Date(iso+'T00:00:00Z'); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
 function shortName(c){
   return c.replace(/^MTS\s*-?\s*NSWA\s*-\s*/i,'').replace(/^NSWA\s*-\s*/i,'')
@@ -372,7 +374,7 @@ function tabsBar(){
   return `<div class="tabs">${t.map(([k,l])=>`<button class="tab ${VIEW===k?'on':''}" onclick="VIEW='${k}';render()">${l}</button>`).join('')}</div>`;
 }
 function filtersBar(){
-  const cats=['All','Aviation','Clinical','Mixed'];
+  const cats=['All'].concat(CATS());
   let h=`<div class="filters">
     ${VIEW==='uptake'?`<div class="seg">${['All','Not set up','Set up — no entries','Active'].map(c=>`<button class="${F.up===c?'on':''}" onclick="F.up='${c}';render()">${c}</button>`).join('')}</div>`:
     `<div class="seg">${cats.map(c=>`<button class="${F.cat===c?'on':''}" onclick="F.cat='${c}';render()">${c}</button>`).join('')}</div>`}
@@ -548,7 +550,7 @@ function personView(p, admin){
       <div class="kpi exp"><div class="l">Expired</div><div class="v">${t.exp}</div></div>
       <div class="kpi none"><div class="l">No record</div><div class="v">${t.none}</div></div>
     </div>
-    ${section('Aviation')}${section('Mixed')}${section('Clinical')}
+    ${CATS().map(section).join('')}
     ${lc.length?`<div class="card" style="margin-top:16px"><details><summary>Line Check / once-off — completed (${lc.length})</summary>${lc.map(row).join('')}</details></div>`:''}
     ${opt.length?`<div class="card" style="margin-top:16px"><details><summary>Also held — not required for ${esc(p.group)} (${opt.length})</summary>${opt.map(row).join('')}</details></div>`:''}
     <div class="card" style="margin-top:16px"><h2>Recent logbook entries</h2><div class="sub">Most recent 40</div>
