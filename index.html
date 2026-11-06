@@ -337,7 +337,7 @@ async function doSetPin(){
 function signOut(){
   const t=SESSION&&SESSION.token; SESSION=null; sessSet(null); clearTimeout(refreshTimer);
   if(t) apiGet({action:'logout',token:t}).catch(()=>{});
-  PEOPLE=[]; ME=null; MYLOGS=null; $('main').innerHTML=''; showGate();
+  PEOPLE=[]; ME=null; MYLOGS=null; USAGE=null; VIEW='overview'; BACK=null; REPORT={id:null,from:'',to:'',notes:false,data:null,back:null}; $('main').innerHTML=''; showGate();
 }
 function openLogbook(){ window.location.href=LOGBOOK_URL; }
 
@@ -365,11 +365,12 @@ async function load(manual){
     if(admin){
       PEOPLE=j.people.map(p=>({...p,items:null}));
       PEOPLE.forEach(p=>p.items=itemsOf(p));
-      if(VIEW==='me') VIEW='overview';
+      if(VIEW==='me' || (VIEW==='person' && !ME) || (VIEW==='report' && !REPORT.id)) VIEW='overview';
       render();
       refreshTimer=setTimeout(()=>{ if(document.visibilityState==='visible') load(); else document.addEventListener('visibilitychange',function v(){ if(document.visibilityState==='visible'){ document.removeEventListener('visibilitychange',v); load(); } }); }, ADMIN_REFRESH_MIN*60000);
     } else {
-      ME={...j.me}; ME.items=itemsOf(ME); VIEW='me'; render();
+      if(!j.me){ $('main').innerHTML='<div class="card empty"><b>Your currency record isn\'t ready yet.</b><br>Ask an admin to run Currency Tracker → Rebuild dashboard snapshot.</div>'; return; }
+      ME={...j.me}; ME.items=itemsOf(ME); if(VIEW!=='report') VIEW='me'; render();
     }
   }catch(e){
     $('main').innerHTML=`<div class="card empty"><b>Could not load data.</b><br>${esc(e.message)}<br><br><button class="btn" onclick="load(true)">Try again</button></div>`;
@@ -384,6 +385,9 @@ async function openPerson(id){
 // ═══ render ═══════════════════════════════════════════════════════
 function render(){
   const m=$('main');
+  // safety net: never render a person page without a person
+  if((VIEW==='person'||VIEW==='me') && !ME){ VIEW='overview'; }
+  if(VIEW==='report' && !REPORT.id){ VIEW=SESSION&&SESSION.role==='ADMIN'?'overview':'me'; }
   if(VIEW==='report'){ m.innerHTML=reportShell(); runReport(); return; }
   if(VIEW==='me'){ m.innerHTML=personView(ME,false); return; }
   if(VIEW==='mine'){   // admin's own record
@@ -572,6 +576,7 @@ function coverage(intervals,from,to){
   return {pct:Math.round(covered/total*100),lapses,total};
 }
 function reportHtml(d){
+  if(!d.me) return '<div class="card empty">No currency record found for this person — run Rebuild dashboard snapshot.</div>';
   const p={...d.me}; p.items=itemsOf(p);
   const from=d.from,to=d.to, inP=d.logs.filter(l=>l[1]>=from&&l[1]<=to);
   const byCode={}; p.items.forEach(i=>byCode[i.code]=i);
