@@ -154,7 +154,32 @@ details summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--ink2);
 .gmsg{min-height:18px;font-size:12.5px;color:var(--exp);margin-top:10px}
 .gmsg.ok{color:var(--cur)}
 .glink{background:none;border:0;color:var(--navy);font-weight:700;font-size:12.5px;margin-top:12px}
-@media print{.topbar,.tabs,.filters,.tbtn,.back{display:none!important}.wrap{padding:0}.card,.kpi{box-shadow:none}}
+/* report */
+.rp-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;background:#fff;border:1px solid var(--rule);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.rp-bar label{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin-bottom:4px}
+.rp-bar input[type=date]{border:1px solid var(--rule);border-radius:8px;padding:8px 10px;font-size:13px}
+.rp-note{font-size:12px;color:var(--muted);line-height:1.5}
+.rp-page{background:#fff;border:1px solid var(--rule);border-radius:12px;padding:26px 28px;max-width:1000px}
+.rp-head{display:flex;align-items:center;gap:14px;border-bottom:3px solid var(--navy);padding-bottom:12px;margin-bottom:14px}
+.rp-head img.r{width:52px;height:52px}.rp-head img.w{height:34px;background:var(--navy);border-radius:6px;padding:4px 8px;margin-left:auto}
+.rp-head h1{font-size:20px;font-weight:800;color:var(--navy)}
+.rp-page h3{font-size:14px;font-weight:800;color:var(--navy);margin:20px 0 8px;display:flex;align-items:center;gap:8px}
+.rp-tbl{width:100%;border-collapse:collapse;font-size:12.5px}
+.rp-tbl th{background:var(--navy);color:#fff;text-align:left;padding:7px 8px;font-size:11px;text-transform:uppercase;letter-spacing:.03em;position:static}
+.rp-tbl td{padding:6px 8px;border-bottom:1px solid var(--rule);vertical-align:top}
+.rp-tbl td.n,.rp-tbl th.n{text-align:right;font-variant-numeric:tabular-nums}
+.rp-tbl tr.tot td{font-weight:800;background:#F3F5F9}
+.cov{display:inline-block;width:70px;height:7px;background:#EEF0F4;border-radius:4px;overflow:hidden;vertical-align:middle;margin-right:6px}
+.cov i{display:block;height:100%}
+@media print{
+  @page{size:A4;margin:12mm}
+  html,body{background:#fff}
+  .topbar,.tabs,.filters,.tbtn,.back,.no-print{display:none!important}
+  .wrap{padding:0;max-width:none}.card,.kpi{box-shadow:none}
+  .rp-page{border:0;padding:0;max-width:none}
+  .rp-tbl th,.rp-tbl tr.tot td,.rp-head img.w,.cov i,.pill,.cat{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  .rp-tbl tr{page-break-inside:avoid}
+}
 </style>
 </head>
 <body>
@@ -359,6 +384,7 @@ async function openPerson(id){
 // ═══ render ═══════════════════════════════════════════════════════
 function render(){
   const m=$('main');
+  if(VIEW==='report'){ m.innerHTML=reportShell(); runReport(); return; }
   if(VIEW==='me'){ m.innerHTML=personView(ME,false); return; }
   if(VIEW==='mine'){   // admin's own record
     const mine=PEOPLE.find(p=>String(p.id)===String(SESSION.id));
@@ -506,6 +532,104 @@ function downloadUsage(){
     .concat((USAGE||[]).map(u=>[u.name,u.id,u.group,u.base,u.email?'Yes':'No',u.status,u.pinSetAt,u.resets,u.codes,u.logins,u.lastLogin,u.lastSeen,u.entries,u.lastEntry].map(q).join(',')));
   const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([lines.join('\n')],{type:'text/csv'})); a.download='NSWA_uptake_'+TODAY+'.csv'; a.click();
 }
+// ═══ Currency & activity summary — print / save as PDF ═══
+let REPORT={id:null,from:'',to:'',notes:false,data:null,back:null};
+function showReport(id){
+  REPORT={id:String(id),to:TODAY,from:addDays(TODAY,-364),notes:false,data:null,back:VIEW};
+  VIEW='report'; render(); window.scrollTo(0,0);
+}
+function reportShell(){
+  return `<button class="back no-print" onclick="VIEW=REPORT.back||'me';render()">← Back</button>
+  <div class="rp-bar no-print">
+    <div><label>From</label><input type="date" id="rp-from" value="${REPORT.from}"></div>
+    <div><label>To</label><input type="date" id="rp-to" value="${REPORT.to}"></div>
+    <label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--ink);margin:0 0 8px"><input type="checkbox" id="rp-notes" ${REPORT.notes?'checked':''}> Include notes</label>
+    <button class="btn" onclick="REPORT.from=document.getElementById('rp-from').value;REPORT.to=document.getElementById('rp-to').value;REPORT.notes=document.getElementById('rp-notes').checked;REPORT.data=null;runReport()">Update</button>
+    <button class="btn ghost" onclick="window.print()">🖨 Print / Save as PDF</button>
+  </div>
+  <div class="rp-note no-print" style="margin-bottom:10px">Tip: set the dates to the term or registration period (default is the last 12 months). In the print dialog choose "Save as PDF". If you include notes, check they contain nothing that could identify a patient before sharing.</div>
+  <div id="rp-out"><div class="loading"><div class="spin"></div>Building summary…</div></div>`;
+}
+async function runReport(){
+  const out=document.getElementById('rp-out'); if(!out) return;
+  if(!REPORT.from||!REPORT.to||REPORT.to<REPORT.from){ out.innerHTML='<div class="card empty">Choose a valid date range.</div>'; return; }
+  if(!REPORT.data){
+    out.innerHTML='<div class="loading"><div class="spin"></div>Building summary…</div>';
+    try{ const j=await apiGet({action:'getReport',token:SESSION.token,id:REPORT.id,from:REPORT.from,to:REPORT.to});
+      if(j.status!=='success') throw new Error(j.message||'Error'); REPORT.data=j; }
+    catch(e){ out.innerHTML=`<div class="card empty">Could not build the summary: ${esc(e.message)}</div>`; return; }
+  }
+  out.innerHTML=reportHtml(REPORT.data);
+}
+// days within [from,to] covered by any [start,end] interval; also counts gaps (lapses)
+function coverage(intervals,from,to){
+  const iv=intervals.filter(x=>x[1]>=from&&x[0]<=to).map(x=>[x[0]<from?from:x[0], x[1]>to?to:x[1]]).sort((a,b)=>a[0]<b[0]?-1:1);
+  const total=days(from,to)+1; if(!iv.length) return {pct:0,lapses:1,total};
+  let covered=0,lapses=0,cur=null;
+  if(iv[0][0]>from) lapses++;
+  iv.forEach(x=>{ if(!cur){cur=x.slice();return;} if(x[0]<=addDays(cur[1],1)){ if(x[1]>cur[1]) cur[1]=x[1]; } else { covered+=days(cur[0],cur[1])+1; lapses++; cur=x.slice(); } });
+  covered+=days(cur[0],cur[1])+1; if(cur[1]<to) lapses++;
+  return {pct:Math.round(covered/total*100),lapses,total};
+}
+function reportHtml(d){
+  const p={...d.me}; p.items=itemsOf(p);
+  const from=d.from,to=d.to, inP=d.logs.filter(l=>l[1]>=from&&l[1]<=to);
+  const byCode={}; p.items.forEach(i=>byCode[i.code]=i);
+  const used=new Set(inP.map(l=>l[2]));
+  const covCol=pc=>pc>=100?'#22A055':pc>=75?'#F0A020':'#D93A32';
+  let grand=0;
+  const sections=CATS().map(cat=>{
+    const rules=RULES.filter(r=>r.category===cat&&(byCode[r.code]&&(byCode[r.code].req||byCode[r.code].rule&&p.it.some(a=>a[0]===r.code&&a[7]))||used.has(r.code)));
+    if(!rules.length) return '';
+    let catN=0;
+    const rows=rules.map(r=>{
+      const it=byCode[r.code]||{st:'none',rule:r};
+      const ents=inP.filter(l=>l[2]===r.code); catN+=ents.length;
+      const bySet={}; ents.forEach(l=>{ const k=l[3]||'Unspecified'; bySet[k]=(bySet[k]||0)+1; });
+      const lastAll=d.logs.filter(l=>l[2]===r.code).map(l=>l[1]).pop()||'';
+      let cov='—';
+      if(!r.once){
+        const iv=d.logs.filter(l=>l[2]===r.code).map(l=>[l[1], l[6]||(r.interval?addDays(l[1],r.interval-1):'')]).filter(x=>x[1]);
+        if(it.src==='x'&&it.exp&&r.interval) iv.push([addDays(it.exp,-(r.interval-1)),it.exp]);
+        if(iv.length){
+          // measure from the first record if history starts inside the period (new starter / new currency)
+          const first=iv.map(x=>x[0]).sort()[0], start=first>from?first:from;
+          if(start<=to){ const c=coverage(iv,start,to);
+            cov=`<span class="cov"><i style="width:${c.pct}%;background:${covCol(c.pct)}"></i></span>${c.pct}%${c.lapses?` · ${c.lapses} lapse${c.lapses>1?'s':''}`:''}${start>from?`<div class="rp-note">since ${fmtS(start)}</div>`:''}`; } }
+      }
+      const status=it.st==='lc'?'Completed '+fmtS(it.exp):it.st==='none'?'No record':it.st==='grace'?'In grace to '+fmtS(it.graceEnd):it.st==='exp'?'Expired '+fmtS(it.exp):'Current to '+fmtS(it.exp);
+      return `<tr><td>${esc(r.currency)}${it.req?'':' <span class="rp-note">(optional)</span>'}</td><td class="n">${ents.length||''}</td>
+        <td style="font-size:11.5px">${Object.entries(bySet).map(([k,v])=>esc(k)+' '+v).join(' · ')}</td>
+        <td>${lastAll?fmtS(lastAll):'–'}</td><td style="white-space:nowrap">${cov}</td><td><span class="pill p-${it.st}">${status}</span></td></tr>`;
+    }).join('');
+    grand+=catN;
+    return `<h3><span class="cat ${cat}">${cat}</span> ${cat} currencies</h3>
+      <table class="rp-tbl"><thead><tr><th>Currency</th><th class="n">Done in period</th><th>By setting</th><th>Last done</th><th>Kept current</th><th>Status today</th></tr></thead>
+      <tbody>${rows}<tr class="tot"><td>Total ${cat}</td><td class="n">${catN}</td><td colspan="4"></td></tr></tbody></table>`;
+  }).join('');
+  const R_=c=>RULE[c]||{currency:c,category:''};
+  return `<div class="rp-page">
+    <div class="rp-head"><img class="r" src="${document.querySelector('.rondel img').src}" alt=""><div><h1>Currency &amp; Skills Summary</h1>
+      <div class="rp-note">Record of currency maintenance and skills performed for registration, credentialing and professional development</div></div>
+      <img class="w" src="${document.querySelector('.wings').src}" alt=""></div>
+    <table class="rp-tbl"><tbody>
+      <tr><td><b>Clinician</b></td><td>${esc(firstLast(p.name))}</td><td><b>Staff ID</b></td><td>${esc(p.id)}</td></tr>
+      <tr><td><b>Group</b></td><td>${esc(p.group)}${p.base?' · '+esc(p.base):''}</td><td><b>Period</b></td><td>${fmt(from)} – ${fmt(to)}</td></tr>
+      <tr><td><b>Organisation</b></td><td>${esc($('org').textContent||'NSW Ambulance')}</td><td><b>Generated</b></td><td>${fmt(TODAY)}</td></tr>
+    </tbody></table>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+      ${CATS().map(c=>{ const n=inP.filter(l=>R_(l[2]).category===c).length; return n?`<div class="kpi" style="flex:1;min-width:95px;padding:10px 12px"><div class="l">${c}</div><div class="v" style="font-size:22px">${n}</div><div class="s">performed in period</div></div>`:''; }).join('')}
+      <div class="kpi" style="flex:1;min-width:95px;padding:10px 12px;border-top-color:var(--gold)"><div class="l">Total</div><div class="v" style="font-size:22px">${grand}</div><div class="s">logbook entries</div></div>
+    </div>
+    ${sections||'<p class="rp-note" style="margin-top:14px">No currencies recorded.</p>'}
+    <h3>Log of entries (${inP.length})</h3>
+    ${inP.length?`<table class="rp-tbl"><thead><tr><th>Date</th><th>Currency</th><th>Category</th><th>Setting</th><th>Completed with</th></tr></thead><tbody>
+      ${inP.map(l=>`<tr><td style="white-space:nowrap">${fmtS(l[1])}</td><td>${esc(R_(l[2]).currency)}</td><td>${esc(R_(l[2]).category)}</td><td>${esc(l[3])}</td><td>${esc(l[4])}</td></tr>${REPORT.notes&&l[5]?`<tr><td></td><td colspan="4" class="rp-note"><b>Notes:</b> ${esc(l[5])}</td></tr>`:''}`).join('')}
+    </tbody></table>`:'<p class="rp-note">No logbook entries in this period.</p>'}
+    <h3>About this record</h3>
+    <div class="rp-note">Generated from the NSW Ambulance Aeromedical Currency Tracker. Logbook entries are recorded by the clinician at the time and name who the currency was completed with; they are self-reported and not independently verified by this summary. Aviation currencies marked "Export" come from the operator's training records. "Kept current" is the share of the period the currency was valid, worked out from completion dates and each currency's interval (grace periods not counted). Where records begin partway through the period it is measured from the first record ("since"); "—" means no dated history.</div>
+  </div>`;
+}
 function downloadCSV(){
   const R=expiringRows(), q=v=>'"'+String(v==null?'':v).replace(/"/g,'""')+'"';
   const lines=[['Name','Staff ID','Group','Base','Currency','Category','Expiry','Days','Status','Source'].map(q).join(',')]
@@ -542,7 +666,9 @@ function personView(p, admin){
   const logs=p.logs;
   return `<div class="card"><div class="person-head"><div class="avatar">${initials(p.name)}</div>
       <div><h2>${esc(firstLast(p.name))}</h2><div class="meta">${esc(p.group)}${p.base?' · '+esc(p.base):''} · ID ${esc(p.id)}</div></div>
-      ${admin?'':`<button class="btn" style="margin-left:auto;padding:12px 18px;font-size:14px" onclick="openLogbook()">＋ Log a currency</button>`}</div></div>
+      <div style="margin-left:auto;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn ghost" style="padding:12px 16px;font-size:14px" onclick="showReport('${esc(p.id)}')">🖨 Print summary</button>
+        ${admin?'':`<button class="btn" style="padding:12px 18px;font-size:14px" onclick="openLogbook()">＋ Log a currency</button>`}</div></div></div>
     <div class="kpis" style="margin-top:16px">
       <div class="kpi cur"><div class="l">Current</div><div class="v">${t.cur}</div><div class="s">of ${t.total} required</div></div>
       <div class="kpi due"><div class="l">Due ≤ ${WARN} days</div><div class="v">${t.due}</div></div>
